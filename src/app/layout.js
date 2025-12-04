@@ -1,6 +1,7 @@
 import { Inter } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers"; // Import the new wrapper
+import { Analytics } from '@vercel/analytics/next';
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -49,6 +50,7 @@ export default function RootLayout({ children }) {
         <Providers>
             {children}
         </Providers>
+        <Analytics />
       </body>
     </html>
   );
