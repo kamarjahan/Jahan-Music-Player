@@ -1,41 +1,41 @@
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { SessionProvider } from "next-auth/react";
+import Providers from "./providers"; // Import the new wrapper
 
 const inter = Inter({ subsets: ["latin"] });
 
-// --- SOCIAL MEDIA SHARING CONFIGURATION ---
+// --- PREVIEW CARD CONFIGURATION ---
 export const metadata = {
   title: "Jahan Music Player",
   description: "Pro Fidelity Audio Player with Spotify Integration. Zero latency, smooth animations, and premium dark UI.",
   
-  // This is your actual domain
+  // Your real domain
   metadataBase: new URL('https://music.jachu.xyz'), 
 
-  // WhatsApp, Facebook, Discord, etc.
+  // Configuration for WhatsApp, Discord, Facebook, etc.
   openGraph: {
     title: 'Jahan Music Player',
-    description: 'Experience music like never before. Connect Spotify and listen in high fidelity.',
+    description: 'Connect Spotify and listen in high fidelity.',
     url: 'https://music.jachu.xyz',
     siteName: 'Jahan Music',
     images: [
       {
-        url: '/og-image.png', // This looks for the file in your public folder
+        url: '/og-image.png', // This is the image file we will add next
         width: 1200,
         height: 630,
-        alt: 'Jahan Music Player Interface',
+        alt: 'Jahan Music Player UI',
       },
     ],
     locale: 'en_US',
     type: 'website',
   },
 
-  // Twitter / X
+  // Configuration for Twitter / X
   twitter: {
     card: 'summary_large_image',
     title: 'Jahan Music Player',
     description: 'Pro Fidelity Audio Player with Spotify Integration.',
-    images: ['/og-image.png'],
+    images: ['/og-image.png'], // Same image
   },
 
   manifest: "/manifest.json",
@@ -45,9 +45,10 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body className={inter.className}>
-        <SessionProvider>
-          {children}
-        </SessionProvider>
+        {/* We wrap the app in the Providers component we created */}
+        <Providers>
+            {children}
+        </Providers>
       </body>
     </html>
   );
