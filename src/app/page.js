@@ -5,11 +5,11 @@ import SpotifyPlayer from "react-spotify-web-playback"
 import SpotifyWebApi from "spotify-web-api-node"
 import { 
   Play, Pause, Home, Search, Library, LogOut, Music2, 
-  Loader2, Shuffle, Repeat, ChevronLeft, Download, Smartphone 
+  Loader2, Shuffle, Repeat, ChevronLeft, Download, Smartphone,
+  History, Sparkles
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
-// Initialize API wrapper
 const spotifyApi = new SpotifyWebApi({
   clientId: process.env.SPOTIFY_CLIENT_ID,
 })
@@ -20,6 +20,9 @@ export default function JahanMusicPlayer() {
   
   // Data States
   const [newReleases, setNewReleases] = useState([])
+  const [recentlyPlayed, setRecentlyPlayed] = useState([]) // <--- NEW
+  const [recommendations, setRecommendations] = useState([]) // <--- NEW
+  
   const [playlists, setPlaylists] = useState([])
   const [selectedPlaylist, setSelectedPlaylist] = useState(null)
   const [playlistTracks, setPlaylistTracks] = useState([])
@@ -31,16 +34,17 @@ export default function JahanMusicPlayer() {
   const [hasMoreResults, setHasMoreResults] = useState(true)
   const [isSearching, setIsSearching] = useState(false)
   
-  // Player Controls States
+  // Player Controls
   const [playingTrack, setPlayingTrack] = useState(null)
+  const [playingTrackDetails, setPlayingTrackDetails] = useState(null) // <--- To store current song info
   const [isShuffle, setIsShuffle] = useState(false)
-  const [repeatMode, setRepeatMode] = useState('off') // 'off', 'context', 'track'
+  const [repeatMode, setRepeatMode] = useState('off')
   
-  // PWA Install Prompt State
+  // PWA Prompt
   const [deferredPrompt, setDeferredPrompt] = useState(null)
   const [showInstallModal, setShowInstallModal] = useState(false)
 
-  // Infinite Scroll Observer
+  // Infinite Scroll Ref
   const observer = useRef()
   const lastTrackElementRef = useCallback(node => {
     if (isSearching) return
@@ -58,7 +62,7 @@ export default function JahanMusicPlayer() {
     const handleBeforeInstallPrompt = (e) => {
       e.preventDefault()
       setDeferredPrompt(e)
-      setShowInstallModal(true) // Show modal immediately when available
+      setShowInstallModal(true)
     }
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
     return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
@@ -74,26 +78,39 @@ export default function JahanMusicPlayer() {
     }
   }
 
-  // --- 2. DATA LOADING ---
+  // --- 2. INITIAL DATA LOADING ---
   useEffect(() => {
     if (session?.user?.accessToken) {
       spotifyApi.setAccessToken(session.user.accessToken)
-      spotifyApi.getNewReleases({ limit: 20, country: 'US' }).then(data => setNewReleases(data.body.albums.items))
+      
+      // A) Get New Releases
+      spotifyApi.getNewReleases({ limit: 10, country: 'US' })
+        .then(data => setNewReleases(data.body.albums.items))
+      
+      // B) Get User Playlists
       spotifyApi.getUserPlaylists().then(data => setPlaylists(data.body.items))
+
+      // C) Get Recently Played (NEW)
+      spotifyApi.getMyRecentlyPlayedTracks({ limit: 10 })
+        .then(data => setRecentlyPlayed(data.body.items.map(item => item.track)))
     }
   }, [session])
 
-  // --- 3. FETCH PLAYLIST DETAILS ---
-  const openPlaylist = async (playlist) => {
-    setSelectedPlaylist(playlist)
-    setView('playlist_detail')
-    try {
-      const data = await spotifyApi.getPlaylistTracks(playlist.id)
-      setPlaylistTracks(data.body.items)
-    } catch (err) {
-      console.error("Error loading playlist tracks:", err)
+  // --- 3. SMART RECOMMENDATIONS (NEW) ---
+  useEffect(() => {
+    if (!playingTrack || !session?.user?.accessToken) return;
+
+    // We need the Track ID (not URI) to fetch recommendations
+    // URI format: "spotify:track:123456" -> Split to get "123456"
+    const trackId = playingTrack.replace('spotify:track:', '');
+
+    if (trackId && !trackId.includes(':')) {
+       // Fetch 5 songs similar to the current one
+       spotifyApi.getRecommendations({ seed_tracks: [trackId], limit: 5 })
+         .then(data => setRecommendations(data.body.tracks))
+         .catch(e => console.log("Recommendation error:", e))
     }
-  }
+  }, [playingTrack, session])
 
   // --- 4. PLAYER CONTROLS ---
   const toggleShuffle = () => {
@@ -103,7 +120,7 @@ export default function JahanMusicPlayer() {
   }
 
   const toggleRepeat = () => {
-    const modes = ['off', 'context', 'track'] // Off -> Repeat All -> Repeat One
+    const modes = ['off', 'context', 'track']
     const nextIndex = (modes.indexOf(repeatMode) + 1) % modes.length
     const newMode = modes[nextIndex]
     setRepeatMode(newMode)
@@ -111,7 +128,18 @@ export default function JahanMusicPlayer() {
   }
 
   const playContext = (uri) => {
-    setPlayingTrack(uri) // Pass the playlist URI to play the whole thing
+    setPlayingTrack(uri)
+  }
+
+  const openPlaylist = async (playlist) => {
+    setSelectedPlaylist(playlist)
+    setView('playlist_detail')
+    try {
+      const data = await spotifyApi.getPlaylistTracks(playlist.id)
+      setPlaylistTracks(data.body.items)
+    } catch (err) {
+      console.error(err)
+    }
   }
 
   // --- 5. SEARCH LOGIC ---
@@ -128,6 +156,7 @@ export default function JahanMusicPlayer() {
     }, 500)
     return () => clearTimeout(timeoutId)
   }, [searchQuery, searchOffset, session])
+
 
   // --- LOGIN SCREEN ---
   if (!session) {
@@ -156,7 +185,7 @@ export default function JahanMusicPlayer() {
           >
             <div className="bg-black/10 p-2 rounded-full"><Smartphone size={24}/></div>
             <div>
-              <h3 className="font-bold text-sm">Install Jahan Music App</h3>
+              <h3 className="font-bold text-sm">Install Jahan App</h3>
               <p className="text-xs opacity-80">Better performance on Phone & PC</p>
             </div>
             <button onClick={(e) => {e.stopPropagation(); setShowInstallModal(false)}}><div className="bg-black/10 p-1 rounded-full"><span className="text-lg font-bold">×</span></div></button>
@@ -187,19 +216,67 @@ export default function JahanMusicPlayer() {
 
         <main className="flex-1 overflow-y-auto pb-32 p-4 sm:p-8 hide-scrollbar">
           
-          {/* HOME VIEW */}
+          {/* HOME VIEW (UPDATED) */}
           {view === 'home' && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
-              <h1 className="text-3xl font-bold">New Releases</h1>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {newReleases.map(track => (
-                  <div key={track.id} onClick={() => setPlayingTrack(track.uri)} className="bg-white/5 p-3 rounded-xl hover:bg-white/10 cursor-pointer transition">
-                    <img src={track.images[0].url} className="rounded-md mb-2 shadow-lg"/>
-                    <p className="font-bold truncate">{track.name}</p>
-                    <p className="text-sm text-gray-400 truncate">{track.artists[0].name}</p>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-10">
+              
+              {/* 1. Recommendation Section (Dynamic) */}
+              {recommendations.length > 0 && (
+                <div className="relative">
+                  <div className="flex items-center gap-2 mb-4">
+                     <Sparkles className="text-[#1DB954]" size={20}/>
+                     <h2 className="text-xl font-bold">Because you're listening</h2>
                   </div>
-                ))}
+                  <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-4">
+                    {recommendations.map(track => (
+                      <div key={track.id} onClick={() => setPlayingTrack(track.uri)} className="min-w-[140px] w-[140px] bg-white/5 p-3 rounded-xl hover:bg-white/10 cursor-pointer transition group">
+                        <div className="relative mb-2">
+                           <img src={track.album.images[0]?.url} className="rounded-md shadow-lg aspect-square object-cover"/>
+                           <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition rounded-md"><Play fill="white"/></div>
+                        </div>
+                        <p className="font-bold truncate text-sm">{track.name}</p>
+                        <p className="text-xs text-gray-400 truncate">{track.artists[0].name}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 2. New Releases */}
+              <div>
+                <h2 className="text-xl font-bold mb-4">New Releases</h2>
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                  {newReleases.map(track => (
+                    <div key={track.id} onClick={() => setPlayingTrack(track.uri)} className="bg-white/5 p-3 rounded-xl hover:bg-white/10 cursor-pointer transition group">
+                      <div className="relative mb-2">
+                          <img src={track.images[0]?.url} className="rounded-md shadow-lg aspect-square object-cover"/>
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition rounded-md"><Play fill="white"/></div>
+                      </div>
+                      <p className="font-bold truncate text-sm">{track.name}</p>
+                      <p className="text-sm text-gray-400 truncate">{track.artists[0].name}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
+
+               {/* 3. Recently Played (Horizontal Scroll) */}
+               {recentlyPlayed.length > 0 && (
+                <div>
+                   <div className="flex items-center gap-2 mb-4">
+                     <History className="text-gray-400" size={20}/>
+                     <h2 className="text-xl font-bold">Jump Back In</h2>
+                  </div>
+                  <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-4">
+                    {recentlyPlayed.map((track, i) => (
+                      <div key={track.id + i} onClick={() => setPlayingTrack(track.uri)} className="min-w-[120px] w-[120px] cursor-pointer hover:opacity-80 transition">
+                        <img src={track.album.images[0]?.url} className="rounded-md shadow-lg aspect-square object-cover mb-2"/>
+                        <p className="font-medium truncate text-xs text-gray-300">{track.name}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
             </motion.div>
           )}
 
@@ -207,34 +284,21 @@ export default function JahanMusicPlayer() {
           {view === 'playlist_detail' && selectedPlaylist && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
               <button onClick={() => setView('library')} className="mb-4 flex items-center text-gray-400 hover:text-white"><ChevronLeft/> Back</button>
-              
-              {/* Playlist Header */}
               <div className="flex flex-col md:flex-row gap-6 mb-8 items-center md:items-end">
                 <img src={selectedPlaylist.images[0]?.url} className="w-48 h-48 sm:w-60 sm:h-60 rounded-lg shadow-2xl"/>
                 <div className="flex-1 text-center md:text-left">
                   <p className="uppercase text-xs font-bold tracking-wider">Playlist</p>
                   <h1 className="text-3xl sm:text-5xl font-black mb-4 mt-2">{selectedPlaylist.name}</h1>
                   <p className="text-gray-400 mb-4">{selectedPlaylist.owner.display_name} • {playlistTracks.length} songs</p>
-                  
-                  {/* Playlist Controls */}
                   <div className="flex items-center gap-4 justify-center md:justify-start">
                     <button onClick={() => playContext(selectedPlaylist.uri)} className="w-14 h-14 bg-[#1DB954] rounded-full flex items-center justify-center hover:scale-105 shadow-lg shadow-green-900/50 text-black">
                       <Play fill="black" size={28} className="ml-1"/>
                     </button>
-                    
-                    <button onClick={toggleShuffle} className={`p-2 rounded-full transition ${isShuffle ? 'text-[#1DB954]' : 'text-gray-400 hover:text-white'}`}>
-                      <Shuffle size={24} />
-                    </button>
-
-                    <button onClick={toggleRepeat} className={`p-2 rounded-full transition relative ${repeatMode !== 'off' ? 'text-[#1DB954]' : 'text-gray-400 hover:text-white'}`}>
-                      <Repeat size={24} />
-                      {repeatMode === 'track' && <span className="absolute top-1 right-0 text-[10px] font-bold bg-black px-1 rounded-full">1</span>}
-                    </button>
+                    <button onClick={toggleShuffle} className={`p-2 rounded-full transition ${isShuffle ? 'text-[#1DB954]' : 'text-gray-400 hover:text-white'}`}><Shuffle size={24} /></button>
+                    <button onClick={toggleRepeat} className={`p-2 rounded-full transition relative ${repeatMode !== 'off' ? 'text-[#1DB954]' : 'text-gray-400 hover:text-white'}`}><Repeat size={24} />{repeatMode === 'track' && <span className="absolute top-1 right-0 text-[10px] font-bold bg-black px-1 rounded-full">1</span>}</button>
                   </div>
                 </div>
               </div>
-
-              {/* Tracks List */}
               <div className="space-y-1">
                 {playlistTracks.map((item, index) => (
                   <div key={item.track.id + index} onClick={() => setPlayingTrack(item.track.uri)} className="flex items-center gap-4 p-3 rounded-md hover:bg-white/10 group cursor-pointer">
@@ -264,7 +328,7 @@ export default function JahanMusicPlayer() {
              </div>
           )}
 
-          {/* SEARCH VIEW (With Infinite Scroll) */}
+          {/* SEARCH VIEW */}
           {view === 'search' && (
              <div className="space-y-6">
                <input 
@@ -278,7 +342,7 @@ export default function JahanMusicPlayer() {
                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                  {searchResults.map((track, i) => (
                    <div key={i} ref={i === searchResults.length - 1 ? lastTrackElementRef : null} onClick={() => setPlayingTrack(track.uri)} className="flex items-center gap-3 p-2 hover:bg-white/10 rounded-md cursor-pointer">
-                     <img src={track.album.images[2].url} className="w-12 h-12 rounded"/>
+                     <img src={track.album.images[2]?.url} className="w-12 h-12 rounded"/>
                      <div>
                        <p className="font-medium truncate text-white">{track.name}</p>
                        <p className="text-sm text-gray-400 truncate">{track.artists[0].name}</p>
@@ -293,7 +357,7 @@ export default function JahanMusicPlayer() {
         </main>
       </div>
 
-      {/* PLAYER */}
+      {/* PLAYER BAR */}
       <div className="fixed bottom-0 w-full bg-black border-t border-white/10 z-50">
         {session?.user?.accessToken && (
             <SpotifyPlayer
@@ -301,6 +365,16 @@ export default function JahanMusicPlayer() {
               play={playingTrack ? true : false}
               uris={playingTrack ? [playingTrack] : []}
               showSaveIcon
+              callback={state => {
+                 // Update local state when track changes to trigger Recommendations
+                 if(state.track?.id) {
+                     // Only update if it's a NEW track to avoid infinite re-renders
+                     if(!playingTrack || !playingTrack.includes(state.track.id)) {
+                        // We don't setPlayingTrack here to avoid loop, 
+                        // but we could use a separate state to track "Current Playing ID" for recommendations
+                     }
+                 }
+              }}
               styles={{
                 activeColor: '#1DB954',
                 bgColor: '#000',
