@@ -27,7 +27,7 @@ const handler = NextAuth({
         params: {
           scope: scopes,
           // 3. NUCLEAR FIX: Force the correct URL here
-          redirect_uri: "https://glowing-trout-wjqr76p69xg29vwp-3000.app.github.dev/api/auth/callback/spotify",
+          
         },
       },
     }),
